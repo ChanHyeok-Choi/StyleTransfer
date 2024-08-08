@@ -67,7 +67,7 @@ def train_main():
     # hyper-parameter
     alpha = 1
     beta = 1e6 # style image 마다 beta 값을 조정해줘야 이쁜 이미지가 나온다.
-    lr = 0.01
+    lr = 1
     
     save_root = f'{alpha}_{beta}_{lr}_initContent'
     os.makedirs(save_root, exist_ok=True)
@@ -87,14 +87,13 @@ def train_main():
     # x = torch.randn(1, 3, 512, 512).to(device)
     x = content_image.clone()
     x = x.requires_grad_(True)
-    optimizer = optim.Adam([x], lr=lr)
+    # optimizer = optim.Adam([x], lr=lr)
+    optimizer = optim.LBFGS([x], lr=lr)
     
-    # train loop
-    steps = 1000
-    for step in tqdm(range(steps)):
+    def closure():
+        optimizer.zero_grad()
         ## content representation (x, content_image)
         ## style representation (x, style_image)
-        
         x_content_list = style_transfer(x, 'content')
         y_content_list = style_transfer(content_image, 'content')
         
@@ -113,14 +112,38 @@ def train_main():
             loss_s += style_loss(x_style, y_style)
         
         loss_total = alpha * loss_c + beta * loss_s
+        loss_total.backward()
+        return loss_total
+    
+    # train loop
+    steps = 1000
+    for step in tqdm(range(steps)):
         
         ## optimizer step
-        optimizer.zero_grad()
-        loss_total.backward()
-        optimizer.step()
+        optimizer.step(closure=closure)
         
         ## loss logging
         if step % 100 == 0:
+            ## content representation (x, content_image)
+            ## style representation (x, style_image)
+            x_content_list = style_transfer(x, 'content')
+            y_content_list = style_transfer(content_image, 'content')
+            
+            x_style_list = style_transfer(x, 'style')
+            y_style_list = style_transfer(style_image, 'style')
+            
+            ## loss_content, loss_style
+            loss_c = 0
+            loss_s = 0
+            loss_total = 0
+            
+            for x_content, y_content in zip(x_content_list, y_content_list):
+                loss_c += content_loss(x_content, y_content)
+            
+            for x_style, y_style in zip(x_style_list, y_style_list):
+                loss_s += style_loss(x_style, y_style)
+            
+            loss_total = alpha * loss_c + beta * loss_s
             print(f'loss_c: {loss_c.cpu()}')
             print(f'loss_s: {loss_s.cpu()}')
             print(f'loss_total: {loss_total.cpu()}')
